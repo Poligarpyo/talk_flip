@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1009694371406",
+    "project_id": "talkflip",
+    "storage_bucket": "talkflip.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1009694371406:android:f1b8f71c487e8c2c6edd1f",
+        "android_client_info": {
+          "package_name": "com.example.talkflip"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA77D3twtPvR91WeIRrlMaUWPp6ZcEEqxU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
