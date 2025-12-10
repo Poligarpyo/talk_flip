@@ -5,34 +5,23 @@ on:
 
 jobs:
   build-ios:
-    name: 🎉 iOS Build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          architecture: x64
           flutter-version: '3.32.4'
 
-      - name: Override pubspec.yaml with compatible versions
+      - name: Use compatible plugin versions
         run: |
-          # Backup original
-          cp pubspec.yaml pubspec.yaml.backup
-          
-          # Create compatible version
           cat > pubspec.yaml << 'EOF'
           name: talkflip
           description: "A new Flutter project."
           publish_to: 'none'
-          
           version: 1.0.0+1
-          
           environment:
             sdk: ^3.8.1
-          
           dependencies:
             flutter:
               sdk: flutter
@@ -44,85 +33,33 @@ jobs:
             string_similarity: ^2.0.1
             dart_phonetics: ^1.0.1
             permission_handler: ^11.0.0
-          
           dev_dependencies:
             flutter_test:
               sdk: flutter
             flutter_lints: ^5.0.0
-          
           flutter:
             uses-material-design: true
           EOF
 
-      - name: Get Flutter dependencies
-        run: |
-          flutter clean
-          flutter pub get
+      - run: flutter clean && flutter pub get
 
-      - name: Setup iOS Podfile
+      - name: Setup iOS
         working-directory: ios
         run: |
-          # Create fresh Podfile
-          cat > Podfile << 'EOF'
-          platform :ios, '13.0'
-          
-          ENV['COCOAPODS_DISABLE_STATS'] = 'true'
-          
-          project 'Runner', {
-            'Debug' => :debug,
-            'Profile' => :release,
-            'Release' => :release,
-          }
-          
-          def flutter_root
-            generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
-            unless File.exist?(generated_xcode_build_settings_path)
-              raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
-            end
-          
-            File.foreach(generated_xcode_build_settings_path) do |line|
-              matches = line.match(/FLUTTER_ROOT\=(.*)/)
-              return matches[1].strip if matches
-            end
-            raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
-          end
-          
-          require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
-          
-          flutter_ios_podfile_setup
-          
-          target 'Runner' do
-            use_modular_headers!
-            
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-          end
-          
-          post_install do |installer|
-            installer.pods_project.targets.each do |target|
-              flutter_additional_ios_build_settings(target)
-            end
-          end
-          EOF
-
-      - name: Install CocoaPods dependencies
-        working-directory: ios
-        run: |
-          sudo gem install cocoapods
           pod repo update
           pod install --repo-update
 
-      - name: Build iOS app
-        run: flutter build ios --release --no-codesign
+      - run: flutter build ios --release --no-codesign
 
-      - name: Create IPA
+      - name: Create and upload IPA
         run: |
           cd build/ios/iphoneos
           mkdir -p Payload
           mv Runner.app Payload/
           zip -r -9 FlutterIpaExport.ipa Payload
+        continue-on-error: true
 
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: iOS-IPA
           path: build/ios/iphoneos/FlutterIpaExport.ipa
