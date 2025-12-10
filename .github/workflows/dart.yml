@@ -8,29 +8,23 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4  # Update to v4
+      - uses: actions/checkout@v4
 
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
-          channel: stable
-          flutter-version: '3.32.4'  # Specify your version
+          flutter-version: '3.32.4'
 
-      # ---- CRITICAL: USE COMPATIBLE PLUGIN VERSIONS ----
-      - name: Update plugin versions for compatibility
+      # ONE COMMAND TO FIX EVERYTHING
+      - name: Setup compatible environment
         run: |
-          # Create pubspec.yaml with versions that WORK with Flutter 3.32.4
+          # 1. Create working pubspec.yaml
           cat > pubspec.yaml << 'EOF'
           name: talkflip
           description: "A new Flutter project."
           publish_to: 'none'
-          
           version: 1.0.0+1
-          
           environment:
             sdk: ^3.8.1
-          
           dependencies:
             flutter:
               sdk: flutter
@@ -42,65 +36,41 @@ jobs:
             string_similarity: ^2.0.1
             dart_phonetics: ^1.0.1
             permission_handler: ^11.0.0
-          
           dev_dependencies:
             flutter_test:
               sdk: flutter
             flutter_lints: ^5.0.0
-          
           flutter:
             uses-material-design: true
           EOF
           
-          # Show what we're using
-          echo "=== Using these plugin versions ==="
-          grep -E "^\s+(firebase|flutter_tts|speech|permission)" pubspec.yaml
-
-      - name: Clean Flutter
-        run: flutter clean
-
-      - name: Flutter pub get
-        run: flutter pub get
-
-      # ---- FIX PODFILE ----
-      - name: Fix iOS Podfile
-        working-directory: ios
-        run: |
-          # Ensure Podfile has use_modular_headers!
-          if ! grep -q "use_modular_headers!" Podfile; then
-            echo "Adding use_modular_headers! to Podfile"
-            sed -i '' '/target .Runner. do/a\
-  use_modular_headers!' Podfile
-          fi
+          # 2. Clean and get packages
+          flutter clean
+          flutter pub get
           
-          # Ensure platform is 13.0+
-          sed -i '' 's/platform :ios, .*/platform :ios, "13.0"/g' Podfile
-
-      - name: Remove iOS build caches
-        run: |
-          rm -rf ios/Pods
-          rm -f ios/Podfile.lock
-
-      - name: Install CocoaPods
-        run: |
+          # 3. Fix iOS
           cd ios
-          pod repo update
-          pod install --repo-update
+          rm -rf Pods Podfile.lock
+          echo 'platform :ios, "13.0"' > Podfile
+          echo 'use_modular_headers!' >> Podfile
+          echo 'flutter_ios_podfile_setup' >> Podfile
+          echo 'target "Runner" do' >> Podfile
+          echo '  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))' >> Podfile
+          echo 'end' >> Podfile
+          pod install
+          cd ..
 
-      - name: Build iOS release (no signing)
-        run: flutter build ios --release --no-codesign
+      - run: flutter build ios --release --no-codesign
 
-      # ---- CREATE IPA ----
-      - name: Create IPA file
+      - name: Create and upload IPA
         run: |
           cd build/ios/iphoneos
           mkdir -p Payload
           mv Runner.app Payload/
           zip -r -9 FlutterIpaExport.ipa Payload
+          echo "IPA created: $(pwd)/FlutterIpaExport.ipa"
 
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4  # Must be v4, not v3
+      - uses: actions/upload-artifact@v4
         with:
           name: iOS-IPA
           path: build/ios/iphoneos/FlutterIpaExport.ipa
-          retention-days: 7
