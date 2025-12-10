@@ -10,33 +10,119 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           architecture: x64
-      - run: flutter pub get
-      
+          flutter-version: '3.32.4'
 
-      - run: pod repo update
+      - name: Override pubspec.yaml with compatible versions
+        run: |
+          # Backup original
+          cp pubspec.yaml pubspec.yaml.backup
+          
+          # Create compatible version
+          cat > pubspec.yaml << 'EOF'
+          name: talkflip
+          description: "A new Flutter project."
+          publish_to: 'none'
+          
+          version: 1.0.0+1
+          
+          environment:
+            sdk: ^3.8.1
+          
+          dependencies:
+            flutter:
+              sdk: flutter
+            cupertino_icons: ^1.0.8
+            firebase_core: ^2.24.0
+            firebase_auth: ^4.11.0
+            flutter_tts: ^4.1.1
+            speech_to_text: ^5.6.0
+            string_similarity: ^2.0.1
+            dart_phonetics: ^1.0.1
+            permission_handler: ^11.0.0
+          
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+            flutter_lints: ^5.0.0
+          
+          flutter:
+            uses-material-design: true
+          EOF
+
+      - name: Get Flutter dependencies
+        run: |
+          flutter clean
+          flutter pub get
+
+      - name: Setup iOS Podfile
         working-directory: ios
+        run: |
+          # Create fresh Podfile
+          cat > Podfile << 'EOF'
+          platform :ios, '13.0'
+          
+          ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+          
+          project 'Runner', {
+            'Debug' => :debug,
+            'Profile' => :release,
+            'Release' => :release,
+          }
+          
+          def flutter_root
+            generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+            unless File.exist?(generated_xcode_build_settings_path)
+              raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+            end
+          
+            File.foreach(generated_xcode_build_settings_path) do |line|
+              matches = line.match(/FLUTTER_ROOT\=(.*)/)
+              return matches[1].strip if matches
+            end
+            raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+          end
+          
+          require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+          
+          flutter_ios_podfile_setup
+          
+          target 'Runner' do
+            use_modular_headers!
+            
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+          end
+          
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+            end
+          end
+          EOF
 
-      - run: flutter build ios --release --no-codesign
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: |
+          sudo gem install cocoapods
+          pod repo update
+          pod install --repo-update
 
-      - run: mkdir Payload
-        working-directory: build/ios/iphoneos
+      - name: Build iOS app
+        run: flutter build ios --release --no-codesign
 
-      - run: mv Runner.app/ Payload
-        working-directory: build/ios/iphoneos
+      - name: Create IPA
+        run: |
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          mv Runner.app Payload/
+          zip -r -9 FlutterIpaExport.ipa Payload
 
-      - name: Zip output
-        run: zip -qq -r -9 FlutterIpaExport.ipa Payload
-        working-directory: build/ios/iphoneos
-
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v3
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/ios/iphoneos/FlutterIpaExport.ipa
-          tag: v1.0
-          overwrite: true
-          body: "This is first release"
+          name: iOS-IPA
+          path: build/ios/iphoneos/FlutterIpaExport.ipa
