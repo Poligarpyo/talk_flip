@@ -14,10 +14,9 @@ jobs:
         with:
           flutter-version: '3.32.4'
 
-      # ONE COMMAND TO FIX EVERYTHING
-      - name: Setup compatible environment
+      - name: Use compatible plugin versions
         run: |
-          # 1. Create working pubspec.yaml
+          # Create compatible pubspec.yaml
           cat > pubspec.yaml << 'EOF'
           name: talkflip
           description: "A new Flutter project."
@@ -43,22 +42,27 @@ jobs:
           flutter:
             uses-material-design: true
           EOF
-          
-          # 2. Clean and get packages
+
+      - name: Clean and get packages
+        run: |
           flutter clean
           flutter pub get
+
+      - name: Let Flutter regenerate iOS
+        run: |
+          rm -rf ios
+          flutter create --platforms=ios --org com.example --project-name talkflip .
           
-          # 3. Fix iOS
+          # Add use_modular_headers! to Podfile
           cd ios
-          rm -rf Pods Podfile.lock
-          echo 'platform :ios, "13.0"' > Podfile
-          echo 'use_modular_headers!' >> Podfile
-          echo 'flutter_ios_podfile_setup' >> Podfile
-          echo 'target "Runner" do' >> Podfile
-          echo '  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))' >> Podfile
-          echo 'end' >> Podfile
-          pod install
-          cd ..
+          sed -i '' '/target .Runner. do/a\
+  use_modular_headers!' Podfile
+
+      - name: Install iOS dependencies
+        working-directory: ios
+        run: |
+          pod repo update
+          pod install --repo-update
 
       - run: flutter build ios --release --no-codesign
 
@@ -68,7 +72,6 @@ jobs:
           mkdir -p Payload
           mv Runner.app Payload/
           zip -r -9 FlutterIpaExport.ipa Payload
-          echo "IPA created: $(pwd)/FlutterIpaExport.ipa"
 
       - uses: actions/upload-artifact@v4
         with:
